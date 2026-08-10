@@ -1,0 +1,79 @@
+# Ce projet genere des gigaoctets. Un `git add .` distrait est irreversible en
+# pratique — pas parce que git ne sait pas defaire, mais parce qu'un objet
+# pousse reste dans l'historique de tous les clones.
+#
+# Regle du depot : il ne contient que du code et de la config. Les artefacts
+# vivent dans le dossier projet sur disque, decrit par gamb.json.
+#
+# Et pas de Git LFS. Ni checkpoints ni PLY, meme en LFS, meme "juste pour
+# essayer".
+
+# --- Donnees de projet : jamais dans git -------------------------------------
+
+**/raw/
+**/images/
+**/images_*/
+**/runs/
+**/masks/
+**/poses/
+**/curation/
+**/mesh/
+**/light/
+
+# --- Artefacts lourds, ou qu'ils soient --------------------------------------
+
+*.ply
+*.splat
+*.ksplat
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.onnx
+*.exr
+*.hdr
+*.dng
+*.DNG
+*.tif
+*.tiff
+*.glb
+*.gltf
+*.fbx
+*.usd
+*.usdc
+*.usdz
+
+# --- Python ------------------------------------------------------------------
+
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# --- Blender -----------------------------------------------------------------
+
+*.blend1
+*.blend2
+
+# Wheels bundlees dans l'extension : rebuildees, jamais versionnees.
+addon/**/wheels/
+
+# --- Environnement local -----------------------------------------------------
+
+.env
+*.local.yaml
+*.local.toml
+
+# --- Editeurs et OS ----------------------------------------------------------
+
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini

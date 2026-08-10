@@ -1,0 +1,23 @@
+# Configuration de lint unique pour tout le depot.
+#
+# Volontairement a la racine plutot que dans engine/pyproject.toml : ruff
+# resout sa config par le parent le plus proche de chaque fichier. Une config
+# dans engine/ ne s'appliquerait donc pas a addon/, qui serait linte avec les
+# defauts — et le miroir de naming.py doit etre juge par les memes regles que
+# son original, sinon la contrainte d'identite octet pour octet devient
+# intenable.
+
+line-length = 100
+
+# Le plancher, pas la cible : le sidecar tourne en 3.11 ou 3.12, l'addon dans
+# le Python 3.13 de Blender. Le code partage doit passer partout.
+target-version = "py311"
+
+[lint]
+select = [
+    "E",   # pycodestyle
+    "F",   # pyflakes
+    "I",   # isort
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+]

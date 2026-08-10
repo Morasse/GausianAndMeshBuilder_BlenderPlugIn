@@ -1,0 +1,49 @@
+name: CI
+
+# Pas de CI GPU : ca n'existe pas gratuitement chez GitHub. Tout ce qui touche
+# CUDA, gsplat ou un modele se teste sur la machine de dev. Ce workflow garde
+# ce qui peut l'etre sans carte : le lint, et les tests CPU du sidecar — dont
+# les gardes sur la table de nommage, qui sont la vraie raison d'etre du CI a
+# ce stade.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-et-tests:
+    name: lint + tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Les deux versions supportees par le sidecar. Pas 3.13 : c'est le
+        # Python de Blender, donc celui de l'addon, qui n'est pas installable
+        # par pip et ne se teste pas ici.
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Aucun submodule a P0, mais third_party/ en aura. Le jour ou le
+          # premier arrive, un CI qui ne les initialise pas echoue de facon
+          # illisible.
+          submodules: recursive
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Outillage
+        run: python -m pip install --upgrade pip ruff pytest
+
+      - name: Installer le sidecar
+        run: pip install -e ./engine
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Tests
+        run: pytest engine/tests -q

@@ -1,0 +1,36 @@
+# Le projet est developpe sous Windows et teste en CI sous Linux. Sans cette
+# normalisation, le premier aller-retour reecrit chaque ligne de chaque fichier
+# et rend le moindre diff illisible.
+
+* text=auto eol=lf
+
+# Scripts Windows : ils cassent si git leur retire les CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# --- Binaires : ne jamais tenter de normaliser -------------------------------
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.tif binary
+*.tiff binary
+*.exr binary
+*.hdr binary
+*.dng binary
+*.blend binary
+*.ply binary
+*.splat binary
+*.pt binary
+*.pth binary
+*.ckpt binary
+*.safetensors binary
+*.onnx binary
+*.glb binary
+*.fbx binary
+*.usdc binary
+*.usdz binary
+*.zip binary

@@ -1,0 +1,34 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "gamb-engine"
+version = "0.0.0"
+description = "Sidecar de GAMB — pipeline 3D Gaussian Splatting pilotable sans Blender"
+readme = "../README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+requires-python = ">=3.11,<3.13"
+
+# Volontairement vide a P0. Le sidecar ne porte aucune logique metier tant que
+# P1 n'est pas ouverte. torch, gsplat et le reste arrivent phase par phase.
+dependencies = []
+
+# Borne haute a 3.13 exclue, et ce n'est pas de la prudence : les wheels CUDA
+# pour cp313 sur Windows sont inegaux, et c'est precisement la raison d'etre de
+# la separation addon / sidecar. L'addon tourne dans le Python 3.13 de Blender,
+# le moteur dans son propre 3.11 ou 3.12.
+
+[project.urls]
+Repository = "https://github.com/Morasse/GausianAndMeshBuilder_BlenderPlugIn"
+
+# [project.scripts] arrive a P1, avec gamb_engine/cli.py. Declarer la commande
+# `gamb` avant que son point d'entree existe donnerait un binaire installe qui
+# plante a l'appel.
+
+[tool.hatch.build.targets.wheel]
+packages = ["gamb_engine"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
