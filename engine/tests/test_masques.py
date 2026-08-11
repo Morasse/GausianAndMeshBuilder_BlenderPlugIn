@@ -8,14 +8,17 @@ pas. Elle se teste donc **sans aucun modèle**, ce qui est heureux : les poids d
 SAM 3 sont sous approbation manuelle.
 """
 
-import numpy as np
 import pytest
-from PIL import Image
 
 from gamb_engine import project
 from gamb_engine.train import gsplat_runner
 
+# L'ordre compte : le runner CI n'a ni torch, ni numpy, ni Pillow. Les importer
+# en tête ferait échouer la **collecte** du fichier, pas seulement ses tests —
+# et un échec de collecte casse la suite entière au lieu de la sauter.
 torch = pytest.importorskip("torch")
+np = pytest.importorskip("numpy")
+Image = pytest.importorskip("PIL.Image")
 
 
 def _masque(dossier, nom, largeur, hauteur, exclu):
