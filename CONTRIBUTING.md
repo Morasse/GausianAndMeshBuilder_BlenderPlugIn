@@ -43,21 +43,51 @@ mois. Un submodule pointe un SHA vérifiable, et
 | Sidecar `gamb-engine` | **3.11 ou 3.12** | Toi, séparément. |
 
 Le moteur ne tourne **pas** dans le Python de Blender — c'est toute la thèse de
-l'architecture, expliquée dans le [README](README.md#architecture). Si ta
-machine n'a qu'un Python 3.13, il faut installer un 3.11 ou 3.12 en plus :
-[python.org/downloads](https://www.python.org/downloads/), ou `winget install
-Python.Python.3.12`.
+l'architecture, expliquée dans le [README](README.md#architecture).
+
+### D'abord regarder ce qui est déjà là
+
+**Ne pas installer avant d'avoir inventorié.** Un interpréteur déjà présent peut
+être totalement invisible des inventaires habituels : sur la machine de
+développement, les Python 3.11 et 3.12 étaient installés et gérés par `uv`,
+donc absents du `PATH`, du registre Windows *et* de `py --list-paths`. Trois
+inventaires, trois réponses différentes.
+
+```bash
+uv python list          # le plus souvent celui qui trouve
+py --list-paths         # registre PEP 514 (Windows)
+```
+
+Deux faux positifs à ne jamais retenir :
+
+- `WindowsApps\python.exe` et `python3.exe` sont des **stubs du Microsoft
+  Store** : ils ouvrent le Store au lieu de lancer Python.
+- Le Python embarqué de Blender (`Blender 5.2\5.2\python\bin\python.exe`).
+  Le prendre pour le sidecar annulerait la raison d'être de l'architecture.
+
+Si — et seulement si — rien de convenable n'existe :
+
+```bash
+uv python install 3.12                  # build autonome, ne touche pas au système
+# ou : winget install Python.Python.3.12
+```
 
 ### Installation
 
 ```bash
-py -3.12 -m venv .venv
-.venv\Scripts\activate          # Windows
-# source .venv/bin/activate     # Linux / macOS
+uv venv --python 3.12                   # trouve l'interpréteur, ou le provisionne
+.venv\Scripts\activate                  # Windows
+# source .venv/bin/activate             # Linux / macOS
 
-pip install --upgrade pip
-pip install -e ./engine
-pip install ruff pytest
+uv pip install -e ./engine
+uv pip install ruff pytest
+```
+
+Sans `uv`, et à condition que l'interpréteur soit enregistré auprès du lanceur
+`py` — ce qui n'est pas le cas d'un Python géré par `uv` :
+
+```bash
+py -3.12 -m venv .venv
 ```
 
 ### Avant de pousser
@@ -68,6 +98,29 @@ Exactement ce que fait le CI :
 ruff check .
 pytest engine/tests -q
 ```
+
+### La vérification que le CI ne peut pas faire
+
+Les tests ci-dessus couvrent chaque morceau isolément. Ils ne peuvent pas
+vérifier que Blender, l'addon et le moteur se parlent — il n'existe pas de CI
+avec un GPU NVIDIA et une installation de Blender.
+
+Cette chaîne-là se vérifie à la main, en deux commandes. Le moteur d'abord :
+
+```bash
+gamb serve
+```
+
+Puis, dans un autre terminal :
+
+```bash
+blender --background --factory-startup --python scripts/verifier_dans_blender.py
+```
+
+Attendu : `RESULTAT: TOUT VERT`, précédé de la ligne exacte que le panneau
+affiche — par exemple `online, VRAM 12.6 / 16.0 Go libres`.
+
+C'est le critère d'acceptation de P1, rejouable à volonté.
 
 ---
 

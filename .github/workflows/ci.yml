@@ -8,7 +8,10 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # main, plus les branches de phase (p1-sidecar, p2-ingest, ...). Attendre
+    # l'ouverture de la PR pour avoir un retour du CI fait perdre un aller-retour
+    # a chaque fois quand on developpe seul.
+    branches: [main, "p*-*"]
   pull_request:
     branches: [main]
 
@@ -37,7 +40,10 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Outillage
-        run: python -m pip install --upgrade pip ruff pytest
+        # httpx2 est requis par fastapi.testclient : les tests parlent au vrai
+        # routeur ASGI plutot qu'a une imitation. httpx2 et non httpx, que
+        # starlette deprecie.
+        run: python -m pip install --upgrade pip ruff pytest httpx2
 
       - name: Installer le sidecar
         run: pip install -e ./engine

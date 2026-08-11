@@ -1,0 +1,23 @@
+schema_version = "1.0.0"
+
+# Ces deux valeurs sont dupliquees depuis naming.py — un manifeste TOML ne peut
+# pas importer de Python. engine/tests/test_manifeste.py lit ce fichier et
+# compare, donc la duplication est verifiee par le CI plutot que subie.
+id = "gausian_and_mesh_builder"
+name = "Gausian And Mesh Builder"
+
+version = "0.1.0"
+tagline = "Pipeline 3D Gaussian Splatting pilote depuis Blender"
+maintainer = "Mathieu Morasse <mathieu.morasse@gmail.com>"
+type = "add-on"
+website = "https://github.com/Morasse/GausianAndMeshBuilder_BlenderPlugIn"
+tags = ["Pipeline", "Import-Export"]
+
+# 5.2 est la LTS courante ; 5.1 est le plancher car 5.0 embarque Python 3.11 et
+# non 3.13, ce qui casserait toute wheel cp313 le jour ou l'addon en portera.
+blender_version_min = "5.1.0"
+
+# C'est ce champ que Blender lit reellement, pas le /LICENSE du depot. Les voir
+# diverger est le defaut exact releve chez un autre addon 3DGS diffuse.
+license = ["SPDX:GPL-3.0-or-later"]
+copyright = ["2026 Mathieu Morasse"]

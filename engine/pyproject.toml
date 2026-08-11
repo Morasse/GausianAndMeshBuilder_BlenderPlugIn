@@ -4,28 +4,41 @@ build-backend = "hatchling.build"
 
 [project]
 name = "gamb-engine"
-version = "0.0.0"
+version = "0.1.0"
 description = "Sidecar de GAMB — pipeline 3D Gaussian Splatting pilotable sans Blender"
 readme = "../README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 requires-python = ">=3.11,<3.13"
 
-# Volontairement vide a P0. Le sidecar ne porte aucune logique metier tant que
-# P1 n'est pas ouverte. torch, gsplat et le reste arrivent phase par phase.
-dependencies = []
+# Volontairement minimal. Chaque dependance ajoutee ici doit d'abord avoir sa
+# ligne dans LICENSES.md — une dependance non auditee est une dependance qui
+# n'entre pas. torch, gsplat et les modeles arrivent phase par phase.
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn>=0.32",
+]
 
 # Borne haute a 3.13 exclue, et ce n'est pas de la prudence : les wheels CUDA
-# pour cp313 sur Windows sont inegaux, et c'est precisement la raison d'etre de
+# pour cp313 sur Windows sont inegales, et c'est precisement la raison d'etre de
 # la separation addon / sidecar. L'addon tourne dans le Python 3.13 de Blender,
 # le moteur dans son propre 3.11 ou 3.12.
 
 [project.urls]
 Repository = "https://github.com/Morasse/GausianAndMeshBuilder_BlenderPlugIn"
 
-# [project.scripts] arrive a P1, avec gamb_engine/cli.py. Declarer la commande
-# `gamb` avant que son point d'entree existe donnerait un binaire installe qui
-# plante a l'appel.
+[project.scripts]
+gamb = "gamb_engine.cli:main"
+
+[dependency-groups]
+dev = [
+  "pytest>=8",
+  "ruff>=0.9",
+  # Requis par fastapi.testclient — les tests parlent au vrai routeur ASGI
+  # plutot qu'a une imitation. httpx2 et non httpx : starlette deprecie le
+  # premier et l'annonce a chaque execution des tests.
+  "httpx2>=2.10",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["gamb_engine"]
