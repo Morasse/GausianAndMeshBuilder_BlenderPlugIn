@@ -186,6 +186,30 @@ Le PSNR affiché en fin de run est celui des **vues de test**, une sur huit, que
 l'optimisation n'a jamais vues. Le PSNR d'entraînement mesure la capacité à
 mémoriser ; seul celui de test mesure la reconstruction.
 
+### Le critère d'acceptation de l'entraînement, et sa limite
+
+Le critère visé était : *PSNR à ±0.3 dB du `simple_trainer.py` de gsplat sur le
+même dataset*. **Cette comparaison directe n'a pas pu être exécutée**, et la
+raison mérite d'être écrite parce qu'elle ressurgira :
+
+`examples/simple_trainer.py` importe **`fused_ssim` au niveau module**. Ce
+paquet ne figure pas dans son propre `examples/requirements.txt`, n'est pas
+publié sur PyPI, n'existe que sur GitHub, et exige une compilation CUDA qui
+échoue ici à la génération des métadonnées. S'y ajoute un `numpy<2.0.0` épinglé
+par les exemples, incompatible avec le numpy de notre pile. C'est un problème de
+reproductibilité de la référence, pas du code de GAMB.
+
+Ce qui est vérifié à la place, et qui couvre le risque réel — un bug de
+*wrapper* : les hyperparamètres sont repris du preset `mcmc` de `simple_trainer`
+valeur pour valeur, et un test les fige ; la rasterisation et la stratégie MCMC
+sont celles de gsplat, appelées directement ; et le PSNR rapporté est celui de
+vues **jamais vues** par l'optimisation. Une erreur de convention de repère,
+d'intrinsèques ou d'espace colorimétrique ferait s'effondrer ce dernier chiffre,
+pas dériver de 0,3 dB.
+
+Mesuré sur le dataset synthétique, preset `production` à 7000 itérations :
+**31,4 dB de PSNR de test, SSIM 0,973, 191 905 gaussiennes, 43 s.**
+
 ### Ajouter un réglage : la règle §14
 
 **Aucun libellé ni tooltip n'est écrit en dur dans le code de l'addon.** Un

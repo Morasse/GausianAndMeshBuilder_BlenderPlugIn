@@ -68,6 +68,26 @@ def test_l_outillage_se_sonde_sans_lever():
     assert isinstance(outils.complet, bool)
 
 
+def test_la_racine_cuda_se_deduit_de_nvcc(monkeypatch, tmp_path):
+    """Beaucoup d'extensions CUDA exigent CUDA_HOME et échouent sans rien expliquer.
+
+    gsplat s'en passe — torch déduit le chemin depuis nvcc — mais d'autres non,
+    et le message « CUDA_HOME environment variable is not set » ne dit pas où
+    regarder.
+    """
+    faux_nvcc = tmp_path / "v12.8" / "bin" / "nvcc.exe"
+    faux_nvcc.parent.mkdir(parents=True)
+    faux_nvcc.write_text("", encoding="utf-8")
+    monkeypatch.setattr("shutil.which", lambda nom: str(faux_nvcc) if nom == "nvcc" else None)
+
+    assert build.racine_cuda() == faux_nvcc.resolve().parent.parent
+
+
+def test_la_racine_cuda_vaut_none_sans_nvcc(monkeypatch):
+    monkeypatch.setattr("shutil.which", lambda _: None)
+    assert build.racine_cuda() is None
+
+
 def test_patch_applique_repond_sans_lever():
     _sauter_si_submodule_absent()
     assert isinstance(build.patch_applique(), bool)

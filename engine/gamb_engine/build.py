@@ -230,7 +230,26 @@ def environnement_execution(base: dict[str, str] | None = None) -> dict[str, str
     environnement = environnement_msvc(base)
     dossier_interpreteur = str(Path(sys.executable).parent)
     environnement["PATH"] = dossier_interpreteur + os.pathsep + environnement.get("PATH", "")
+
+    # gsplat s'en passe — il déduit le chemin de CUDA depuis nvcc, via torch.
+    # Beaucoup d'autres extensions CUDA exigent la variable et échouent sur un
+    # « CUDA_HOME environment variable is not set » qui ne dit pas quoi faire.
+    if "CUDA_HOME" not in environnement:
+        racine = racine_cuda()
+        if racine is not None:
+            environnement["CUDA_HOME"] = str(racine)
     return environnement
+
+
+def racine_cuda() -> Path | None:
+    """Racine du CUDA Toolkit, déduite de l'emplacement de nvcc."""
+    import shutil
+
+    nvcc = shutil.which("nvcc")
+    if nvcc is None:
+        return None
+    # <racine>/bin/nvcc.exe
+    return Path(nvcc).resolve().parent.parent
 
 
 def activer() -> None:
