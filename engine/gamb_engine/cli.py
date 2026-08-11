@@ -9,6 +9,7 @@ moteur sans entree CLI est une capacite a moitie livree.
     gamb doctor    ce que la machine sait faire, et ce qui manque
     gamb serve     demarre le serveur
     gamb health    interroge un serveur deja demarre
+    gamb ingest    fait entrer des images dans un projet
 """
 
 from __future__ import annotations
@@ -18,8 +19,10 @@ import json
 import sys
 import urllib.error
 import urllib.request
+from pathlib import Path
 
-from gamb_engine import bootstrap, machine, naming
+from gamb_engine import bootstrap, machine, naming, project
+from gamb_engine.ingest import images as ingest_images
 from gamb_engine.server import HOTE_DEFAUT, PORT_DEFAUT, VERSION
 
 
@@ -79,6 +82,50 @@ def commande_health(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def commande_ingest(arguments: argparse.Namespace) -> int:
+    source = Path(arguments.source)
+
+    if not arguments.sur_place and not arguments.projet:
+        print("il faut --projet <racine>, ou --sur-place si la source est deja un projet",
+              file=sys.stderr)
+        return 1
+
+    if arguments.sur_place:
+        # La source EST la racine du projet ; ses images sont deja en place.
+        racine, dossier_images, copier = source, source / "images", False
+        if not dossier_images.is_dir():
+            print(f"{dossier_images} n'existe pas — un projet attend ses images la.",
+                  file=sys.stderr)
+            return 1
+    else:
+        racine, dossier_images, copier = Path(arguments.projet), source, True
+
+    if project.existe(racine):
+        projet = project.charger(racine)
+        try:
+            projet.figer(
+                espace_colorimetrique=arguments.espace,
+                axes=arguments.axes,
+                unites=arguments.unites,
+            )
+        except project.DecisionFigee as refus:
+            print(f"decision figee : {refus}", file=sys.stderr)
+            return 1
+        print(f"projet existant : {projet.nom}")
+    else:
+        projet = project.creer(
+            racine,
+            espace_colorimetrique=arguments.espace,
+            axes=arguments.axes,
+            unites=arguments.unites,
+        )
+        print(f"projet cree : {projet.manifeste}")
+
+    rapport = ingest_images.ingerer(dossier_images, projet, copier=copier)
+    print(rapport.resume())
+    return 0
+
+
 def construire_analyseur() -> argparse.ArgumentParser:
     analyseur = argparse.ArgumentParser(
         prog=naming.CLI_COMMAND,
@@ -97,6 +144,34 @@ def construire_analyseur() -> argparse.ArgumentParser:
     health = sous.add_parser("health", help="interroge un serveur deja demarre")
     _ajouter_options_adresse(health)
     health.set_defaults(fonction=commande_health)
+
+    ingest = sous.add_parser("ingest", help="fait entrer des images dans un projet")
+    ingest.add_argument("source", help="dossier d'images, ou racine du projet avec --sur-place")
+    ingest.add_argument("--projet", help="racine du projet a creer ou completer")
+    ingest.add_argument(
+        "--sur-place",
+        action="store_true",
+        help="la source est deja la racine du projet ; ne copie rien",
+    )
+    ingest.add_argument(
+        "--espace",
+        default="sRGB",
+        choices=project.ESPACES_COLORIMETRIQUES,
+        help="espace colorimetrique — decision figee (defaut : sRGB)",
+    )
+    ingest.add_argument(
+        "--axes",
+        default="z_up_droite",
+        choices=tuple(project.AXES),
+        help="convention d'axes — decision figee (defaut : z_up_droite, celle de Blender)",
+    )
+    ingest.add_argument(
+        "--unites",
+        default="metre",
+        choices=project.UNITES,
+        help="unites — decision figee (defaut : metre)",
+    )
+    ingest.set_defaults(fonction=commande_ingest)
 
     return analyseur
 

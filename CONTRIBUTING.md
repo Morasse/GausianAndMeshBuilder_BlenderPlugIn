@@ -99,6 +99,38 @@ ruff check .
 pytest engine/tests -q
 ```
 
+⚠️ **Un venv tiède ne reconstruit pas le paquet.** Si tu touches à
+`engine/pyproject.toml`, refais la vérification dans un environnement **neuf** —
+sinon un build cassé passe inaperçu en local et n'apparaît qu'en CI :
+
+```bash
+uv venv --python 3.11 /tmp/verif && uv pip install --python /tmp/verif -e ./engine
+```
+
+### Le dataset de test
+
+Les vraies captures sont lentes à produire et leurs poses sont *estimées*. Sur
+un dataset photo, un mauvais résultat peut venir de l'entraînement ou des poses,
+et rien ne permet de les distinguer.
+
+D'où un dataset synthétique dont les poses sont **exactes** :
+
+```bash
+blender --background --factory-startup \
+    --python scripts/generer_dataset_synthetique.py -- --sortie ./dataset_test
+
+python scripts/verifier_dataset.py ./dataset_test     # attendu : DATASET COHERENT
+gamb ingest ./dataset_test --sur-place                # en fait un projet GAMB
+```
+
+La vérification reprojette le point que toutes les caméras visent : s'il ne
+tombe pas au centre de chaque image, la conversion de repère Blender → COLMAP
+est fausse. C'est une erreur invisible à l'œil sur les images rendues, qui ne se
+manifeste que par un entraînement qui ne converge jamais.
+
+Ce dataset porte ses poses au format COLMAP, donc **l'entraîneur se valide sans
+COLMAP**.
+
 ### La vérification que le CI ne peut pas faire
 
 Les tests ci-dessus couvrent chaque morceau isolément. Ils ne peuvent pas
