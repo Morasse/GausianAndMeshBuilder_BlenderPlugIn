@@ -107,6 +107,44 @@ sinon un build cassé passe inaperçu en local et n'apparaît qu'en CI :
 uv venv --python 3.11 /tmp/verif && uv pip install --python /tmp/verif -e ./engine
 ```
 
+### La pile d'entraînement (gsplat + CUDA)
+
+Optionnelle : le sidecar démarre, répond et ingère sans elle. Elle n'est requise
+que pour entraîner.
+
+Les versions sont **épinglées**, et ce n'est pas de la prudence : gsplat déclare
+`torch` sans aucune borne, donc un `pip install gsplat` prend la dernière version
+publiée et casse. C'est exactement ce qui est arrivé — torch 2.11 est
+incompilable sous Windows, son en-tête déclarant un paramètre nommé `small` que
+le SDK Windows redéfinit en `char`.
+
+```bash
+git submodule update --init --recursive          # ⚠️ AVANT tout le reste
+uv pip install --index-url https://download.pytorch.org/whl/cu128 torch==2.8.0
+BUILD_NO_CUDA=1 uv pip install --no-build-isolation -e ./third_party/gsplat
+gamb build
+```
+
+**L'ordre compte.** gsplat a lui-même un submodule imbriqué, `glm`, dont
+dépendent tous ses kernels. Et une fois le correctif MSVC posé, le submodule est
+modifié, donc git refuse de le mettre à jour — il faut donc initialiser
+récursivement *avant*. Sans `glm`, la compilation démarre quand même et échoue au
+dixième fichier dans des milliers de lignes de log nvcc. `gamb doctor` et
+`gamb build` le vérifient désormais et le disent en une phrase.
+
+**`BUILD_NO_CUDA=1` n'est pas un contournement** : c'est ainsi qu'upstream
+produit sa propre wheel PyPI, qui est `py3-none-any`. Sans lui, l'installation
+compile les kernels immédiatement, dans un shell qui n'a pas `cl.exe`, et
+échoue. Avec lui, l'installation est pure Python et `gamb build` prend la suite :
+il pose le correctif MSVC, prépare l'environnement Visual Studio, puis déclenche
+la compilation (~80 s, une seule fois).
+
+Prérequis vérifiables sans rien installer :
+
+```bash
+gamb doctor        # nvcc, MSVC, vcvars64.bat, état du submodule et du correctif
+```
+
 ### Le dataset de test
 
 Les vraies captures sont lentes à produire et leurs poses sont *estimées*. Sur

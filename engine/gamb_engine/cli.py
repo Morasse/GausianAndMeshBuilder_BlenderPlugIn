@@ -10,18 +10,20 @@ moteur sans entree CLI est une capacite a moitie livree.
     gamb serve     demarre le serveur
     gamb health    interroge un serveur deja demarre
     gamb ingest    fait entrer des images dans un projet
+    gamb build     applique le correctif gsplat et compile ses kernels CUDA
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 import urllib.error
 import urllib.request
 from pathlib import Path
 
-from gamb_engine import bootstrap, machine, naming, project
+from gamb_engine import bootstrap, build, machine, naming, project
 from gamb_engine.ingest import images as ingest_images
 from gamb_engine.server import HOTE_DEFAUT, PORT_DEFAUT, VERSION
 
@@ -52,12 +54,72 @@ def commande_doctor(_: argparse.Namespace) -> int:
     print(f"  nvcc : {chaine.nvcc or 'absent'}")
     if sys.platform == "win32":
         print(f"  MSVC : {chaine.msvc or 'absent'}")
+        vcvars = build.trouver_vcvars()
+        print(f"  vcvars64.bat : {vcvars or 'INTROUVABLE'}")
     if chaine.complete:
         print("  -> gsplat pourra compiler ses kernels au besoin")
     else:
         print(f"  -> manquant : {', '.join(chaine.manquant)}")
         print("     gsplat echouera s'il doit compiler plutot qu'utiliser une wheel")
 
+    print()
+    print("=== gsplat ===")
+    if not build.submodule_present():
+        print(f"  submodule absent : {build.SUBMODULE_GSPLAT}")
+        print("  -> git submodule update --init --recursive")
+    else:
+        print(f"  submodule present, v{build.GSPLAT_VERSION} attendu")
+        if build.glm_present():
+            print("  glm (submodule imbrique) : present")
+        else:
+            print("  glm (submodule imbrique) : ABSENT — la compilation echouera")
+            print("  -> git submodule update --init --recursive")
+        etat = "applique" if build.patch_applique() else "PAS applique"
+        print(f"  correctif MSVC : {etat}")
+        if not build.patch_applique():
+            print("  -> gamb build")
+
+    return 0
+
+
+def commande_build(arguments: argparse.Namespace) -> int:
+    """Applique le correctif et declenche la compilation CUDA de gsplat."""
+    try:
+        pose = build.appliquer_patch()
+    except build.PreparationImpossible as probleme:
+        print(f"preparation impossible : {probleme}", file=sys.stderr)
+        return 1
+
+    print(f"correctif MSVC : {'applique maintenant' if pose else 'deja en place'}")
+
+    outils = build.outillage()
+    if not outils.complet:
+        print(f"outillage incomplet : {', '.join(outils.manquant)}", file=sys.stderr)
+        return 1
+
+    if arguments.correctif_seulement:
+        return 0
+
+    try:
+        environnement = build.environnement_execution()
+    except build.PreparationImpossible as probleme:
+        print(f"environnement de compilation indisponible : {probleme}", file=sys.stderr)
+        return 1
+
+    print("compilation des kernels CUDA (plusieurs dizaines de secondes au premier run)...")
+    resultat = subprocess.run(
+        [sys.executable, "-c", "from gsplat.cuda._backend import _C; print(_C.__name__)"],
+        env=environnement,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if resultat.returncode != 0:
+        print(resultat.stdout[-3000:], file=sys.stderr)
+        print(resultat.stderr[-3000:], file=sys.stderr)
+        return 1
+
+    print("kernels CUDA disponibles.")
     return 0
 
 
@@ -172,6 +234,16 @@ def construire_analyseur() -> argparse.ArgumentParser:
         help="unites — decision figee (defaut : metre)",
     )
     ingest.set_defaults(fonction=commande_ingest)
+
+    construction = sous.add_parser(
+        "build", help="applique le correctif gsplat et compile ses kernels CUDA"
+    )
+    construction.add_argument(
+        "--correctif-seulement",
+        action="store_true",
+        help="pose le correctif sans lancer la compilation",
+    )
+    construction.set_defaults(fonction=commande_build)
 
     return analyseur
 
