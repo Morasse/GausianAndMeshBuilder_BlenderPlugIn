@@ -40,8 +40,22 @@ def test_le_gpu_est_absent_ou_complet():
 
 
 def test_health_ne_charge_pas_torch():
-    server.etat()
-    assert "torch" not in sys.modules, (
+    """Verifie dans un sous-processus neuf : sinon le resultat depend de l'ordre
+    d'execution de la suite, un autre test pouvant avoir importe torch avant."""
+    import subprocess
+
+    resultat = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys; from gamb_engine import server; server.etat(); "
+            "print('torch' in sys.modules)",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert resultat.stdout.strip() == "False", (
         "/health a charge torch. La VRAM doit venir de nvidia-smi : le panneau "
         "Blender doit s'allumer en millisecondes, pas apres un import CUDA."
     )

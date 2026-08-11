@@ -14,11 +14,29 @@ from gamb_engine.train import gsplat_runner
 
 
 def test_le_module_n_importe_pas_torch_au_chargement():
-    """Le sidecar doit répondre /health sans payer trois secondes d'import CUDA."""
+    """Le sidecar doit répondre /health sans payer trois secondes d'import CUDA.
+
+    Vérifié dans un **sous-processus** neuf. Inspecter `sys.modules` depuis le
+    test lui-même ne prouverait rien : il suffirait qu'un autre fichier de la
+    suite ait importé torch avant pour que le résultat dépende de l'ordre
+    d'exécution — dans un sens comme dans l'autre.
+    """
+    import subprocess
     import sys
 
-    assert "torch" not in sys.modules, (
-        "importer gamb_engine.train.gsplat_runner a chargé torch. Les imports "
+    resultat = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys, gamb_engine.train.gsplat_runner; "
+            "print('torch' in sys.modules)",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert resultat.stdout.strip() == "False", (
+        "importer gamb_engine.train.gsplat_runner charge torch. Les imports "
         "lourds doivent rester dans les fonctions."
     )
 

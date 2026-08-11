@@ -259,6 +259,99 @@ def commande_train(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def commande_prior(arguments: argparse.Namespace) -> int:
+    """Écrit un prior géométrique dans le projet.
+
+    À P4 une seule source automatique : la boîte englobante du nuage
+    d'initialisation. C'est le garde-fou minimal — il suffit déjà à interdire
+    les floaters lointains, sans rien modéliser. Les volumes dessinés à la main
+    dans Blender arriveront par l'addon, dans le même `prior.json`.
+    """
+    from gamb_engine.poses import colmap
+    from gamb_engine.train import geometry_prior
+
+    try:
+        projet = project.charger(arguments.projet)
+        modele = colmap.lire(projet.racine)
+    except (project.ProjetIntrouvable, colmap.ModeleIllisible) as probleme:
+        print(f"projet illisible : {probleme}", file=sys.stderr)
+        return 1
+
+    if not modele.points:
+        print("aucun nuage d'initialisation — rien pour deduire un volume", file=sys.stderr)
+        return 1
+
+    volume = geometry_prior.volume_englobant(modele.points, marge=arguments.marge)
+    prior = geometry_prior.PriorGeometrique(
+        volumes=[volume],
+        elaguer_tous_les=arguments.elaguer_tous_les,
+    )
+    chemin = prior.ecrire(projet.racine)
+
+    demi = [volume.matrice[i][i] for i in range(3)]
+    centre = [volume.matrice[i][3] for i in range(3)]
+    print(f"prior ecrit : {chemin}")
+    print(f"  volume englobant, marge {arguments.marge}")
+    print(f"  centre      : {', '.join(f'{v:.2f}' for v in centre)}")
+    print(f"  demi-dimensions : {', '.join(f'{v:.2f}' for v in demi)}")
+    print(f"  elagage tous les {arguments.elaguer_tous_les} pas")
+    return 0
+
+
+def commande_mesh(arguments: argparse.Namespace) -> int:
+    """Extrait une surface depuis un run déjà terminé — mode Fast, Open3D."""
+    from gamb_engine import build
+    from gamb_engine.mesh import tsdf
+    from gamb_engine.train import gsplat_runner
+
+    build.activer()
+    import torch
+
+    try:
+        projet = project.charger(arguments.projet)
+    except (project.ProjetIntrouvable, project.FormatIncompatible) as probleme:
+        print(f"projet illisible : {probleme}", file=sys.stderr)
+        return 1
+
+    runs = sorted(p for p in projet.runs.glob("*") if (p / "point_cloud.ply").is_file())
+    if not runs:
+        print(f"aucun run avec un PLY dans {projet.runs}", file=sys.stderr)
+        return 1
+    run = next((p for p in runs if p.name == arguments.run), None) if arguments.run else runs[-1]
+    if run is None:
+        print(f"run {arguments.run!r} introuvable", file=sys.stderr)
+        return 1
+
+    appareil = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if appareil.type != "cuda":
+        print("aucun GPU CUDA — le rendu de profondeur n'a pas de repli", file=sys.stderr)
+        return 1
+
+    parametres = gsplat_runner.lire_ply(run / "point_cloud.ply", torch, appareil)
+    configuration = gsplat_runner.Configuration()
+    dataset = gsplat_runner.charger_dataset(projet, configuration, appareil)
+
+    bandes = parametres["shN"].shape[1]
+    degre = int(round((bandes + 1) ** 0.5)) - 1
+
+    destination = projet.racine / "mesh" / f"{run.name}.ply"
+    print(f"run : {run.name}  ({parametres['means'].shape[0]} gaussiennes, SH degre {degre})")
+    resultat = tsdf.extraire(
+        parametres,
+        dataset,
+        destination,
+        degre_sh=degre,
+        taille_voxel=arguments.voxel,
+        decimation=arguments.decimation,
+        torch=torch,
+    )
+
+    print(f"mesh : {resultat.chemin}")
+    print(f"  {resultat.sommets} sommets, {resultat.triangles} triangles")
+    print(f"  {resultat.vues_integrees} vues integrees, voxel {arguments.voxel}")
+    return 0
+
+
 def construire_analyseur() -> argparse.ArgumentParser:
     analyseur = argparse.ArgumentParser(
         prog=naming.CLI_COMMAND,
@@ -327,7 +420,29 @@ def construire_analyseur() -> argparse.ArgumentParser:
     entrainement.add_argument("--poids-ssim", type=float, default=None)
     entrainement.set_defaults(fonction=commande_train)
 
+    prior = sous.add_parser("prior", help="ecrit un prior geometrique dans le projet")
+    prior.add_argument("projet", help="racine du projet")
+    prior.add_argument(
+        "--marge", type=float, default=0.05, help="marge relative autour du nuage"
+    )
+    prior.add_argument("--elaguer-tous-les", type=int, default=100)
+    prior.set_defaults(fonction=commande_prior)
+
+    maillage = sous.add_parser("mesh", help="extrait une surface depuis un run (mode Fast)")
+    maillage.add_argument("projet", help="racine du projet")
+    maillage.add_argument("--run", default=None, help="defaut : le plus recent")
+    maillage.add_argument("--voxel", type=float, default=tsdf_taille_voxel())
+    maillage.add_argument("--decimation", type=int, default=0, help="triangles cibles ; 0 = brut")
+    maillage.set_defaults(fonction=commande_mesh)
+
     return analyseur
+
+
+def tsdf_taille_voxel() -> float:
+    """Défaut du voxel TSDF, lu sans importer Open3D."""
+    from gamb_engine.mesh import tsdf
+
+    return tsdf.TAILLE_VOXEL_PAR_DEFAUT
 
 
 def main(argv: list[str] | None = None) -> int:

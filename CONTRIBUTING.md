@@ -186,6 +186,34 @@ Le PSNR affiché en fin de run est celui des **vues de test**, une sur huit, que
 l'optimisation n'a jamais vues. Le PSNR d'entraînement mesure la capacité à
 mémoriser ; seul celui de test mesure la reconstruction.
 
+### Contraindre l'entraînement par une géométrie — le prior
+
+C'est **le seul morceau de ce dépôt qui n'a pas d'équivalent ailleurs**. La
+recherche du 2026-08-11 l'a établi : initialiser des gaussiennes sur un mesh est
+résolu, mais *interdire les gaussiennes hors d'un volume pendant
+l'entraînement* n'existe ni dans gsplat, ni dans splatfacto, ni dans Postshot,
+ni dans Brush — tous ne proposent qu'un recadrage après coup.
+
+```bash
+gamb prior ./dataset_test --marge 0.05    # volume englobant du nuage
+gamb train ./dataset_test --preset apercu # le prior est repris automatiquement
+```
+
+Le prior vit dans `prior.json`, à la racine du projet. Un volume y est décrit
+par une **matrice 4×4** — celle d'un objet Blender. Le cube unité `[-1, 1]³`
+transformé par cette matrice définit la région, donc l'utilisateur ajoute un
+cube ou une sphère dans sa scène, le place, et c'est tout : ni coordonnées à
+saisir, ni format intermédiaire.
+
+Deux modes : `garder` (tout ce qui en sort est élagué) et `exclure` (tout ce qui
+y entre est élagué). Sans aucun volume `garder`, seuls les `exclure`
+s'appliquent — poser une seule boîte d'exclusion ne doit pas vider la scène.
+
+L'élagage passe **après** la densification, pas avant : la stratégie MCMC
+recrée des gaussiennes en permanence, y compris hors volume. Et un volume qui
+supprimerait *tout* est ignoré : un volume mal placé viderait la scène et ferait
+planter la suite sur des tenseurs vides.
+
 ### Le critère d'acceptation de l'entraînement, et sa limite
 
 Le critère visé était : *PSNR à ±0.3 dB du `simple_trainer.py` de gsplat sur le

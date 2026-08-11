@@ -30,6 +30,7 @@ from typing import Any
 from gamb_engine import options
 from gamb_engine.poses import colmap
 from gamb_engine.project import Projet
+from gamb_engine.train import geometry_prior
 
 # Une vue sur huit est mise de côté et n'est jamais vue par l'optimisation.
 # C'est la convention du domaine, et c'est surtout le seul chiffre honnête :
@@ -89,6 +90,10 @@ class Metriques:
     ssim_test: float = 0.0
     nombre_gaussiennes: int = 0
     duree_s: float = 0.0
+    # Combien de gaussiennes le prior géométrique a retirées sur tout le run.
+    # C'est la moitié du critère d'acceptation de P4.
+    gaussiennes_elaguees: int = 0
+    prior_actif: bool = False
     historique: list[dict[str, Any]] = field(default_factory=list)
 
 
@@ -321,12 +326,21 @@ def entrainer(
     projet: Projet,
     configuration: Configuration | None = None,
     progression: Callable[[int, int, float], None] | None = None,
+    prior: geometry_prior.PriorGeometrique | None = None,
 ) -> Resultat:
-    """Entraîne un splat et écrit un run immuable dans `runs/`."""
+    """Entraîne un splat et écrit un run immuable dans `runs/`.
+
+    Si le projet contient un `prior.json`, ou si un prior est passé
+    explicitement, la géométrie fournie contraint l'entraînement : les
+    gaussiennes hors volume sont élaguées périodiquement, et une pénalité les
+    rappelle vers la surface.
+    """
     import torch
     from gsplat.strategy import MCMCStrategy
 
     configuration = configuration or Configuration()
+    if prior is None:
+        prior = geometry_prior.charger(projet.racine)
     if not torch.cuda.is_available():
         raise RuntimeError(
             "aucun GPU CUDA visible — l'entraînement 3DGS n'a pas de repli CPU utilisable."
@@ -353,6 +367,7 @@ def entrainer(
     entrainement = torch.tensor(dataset.indices_entrainement, device=appareil)
     historique: list[dict[str, Any]] = []
     dernier_psnr = 0.0
+    elaguees = 0
 
     for etape in range(configuration.iterations):
         # Le degré des SH monte par paliers : commencer au degré plein fait
@@ -380,6 +395,13 @@ def entrainer(
         if configuration.reg_echelle > 0.0:
             perte = perte + configuration.reg_echelle * torch.exp(parametres["scales"]).mean()
 
+        # (c) rappel vers la surface fournie — vers un mesh **externe**, pas
+        # vers une surface dérivée des gaussiennes elles-mêmes.
+        if prior is not None:
+            penalite = prior.penalite(parametres["means"], torch)
+            if penalite is not None:
+                perte = perte + penalite
+
         strategie.step_pre_backward(parametres, optimiseurs, etat, etape, info)
         perte.backward()
 
@@ -396,6 +418,12 @@ def entrainer(
             lr=configuration.lr_positions * dataset.echelle_scene,
         )
 
+        # (b) l'élagage vient APRÈS la densification : la stratégie recrée des
+        # gaussiennes en permanence, y compris hors volume. Élaguer avant la
+        # laisserait les réintroduire à chaque pas.
+        if prior is not None:
+            elaguees += prior.elaguer(parametres, optimiseurs, etat, etape, torch)
+
         if etape % 100 == 0 or etape == configuration.iterations - 1:
             with torch.no_grad():
                 dernier_psnr = psnr(rendu, verite, torch)
@@ -410,10 +438,19 @@ def entrainer(
             if progression:
                 progression(etape, configuration.iterations, dernier_psnr)
 
+    # Passe finale : la densification tourne jusqu'au dernier pas, donc sans
+    # elle le PLY livré contient encore des gaussiennes hors volume.
+    if prior is not None:
+        elaguees += prior.elaguer(
+            parametres, optimiseurs, etat, configuration.iterations, torch, final=True
+        )
+
     metriques = Metriques(
         psnr_entrainement=dernier_psnr,
         nombre_gaussiennes=int(parametres["means"].shape[0]),
         duree_s=time.time() - depart,
+        gaussiennes_elaguees=elaguees,
+        prior_actif=prior is not None and prior.actif,
         historique=historique,
     )
     _evaluer(parametres, dataset, configuration, metriques, torch)
@@ -452,7 +489,8 @@ def _ecrire_run(projet, configuration, metriques, parametres, torch) -> Path:
     import yaml
 
     horodatage = time.strftime("%Y-%m-%d_%H%M%S")
-    dossier = projet.runs / f"{horodatage}_mcmc_{metriques.nombre_gaussiennes}"
+    marque = "guide" if metriques.prior_actif else "libre"
+    dossier = projet.runs / f"{horodatage}_{marque}_{metriques.nombre_gaussiennes}"
     dossier.mkdir(parents=True, exist_ok=True)
 
     (dossier / "config.yaml").write_text(
@@ -511,6 +549,50 @@ def ecrire_ply(chemin: Path, parametres, torch) -> None:
     with chemin.open("wb") as fichier:
         fichier.write(("\n".join(entete) + "\n").encode("ascii"))
         fichier.write(donnees.tobytes())
+
+
+def lire_ply(chemin: Path, torch, appareil=None) -> dict:
+    """Relit un PLY 3DGS et reconstruit les paramètres, valeurs pré-activation.
+
+    L'inverse exact de `ecrire_ply`. Sert à extraire un mesh d'un run déjà
+    terminé sans le réentraîner — un run est immuable, on doit pouvoir y
+    revenir.
+    """
+    import numpy as np
+
+    brut = Path(chemin).read_bytes()
+    entete, _, corps = brut.partition(b"end_header\n")
+    lignes = entete.decode("ascii").splitlines()
+
+    noms = [ligne.split()[-1] for ligne in lignes if ligne.startswith("property float")]
+    nombre = int(next(ligne for ligne in lignes if ligne.startswith("element vertex")).split()[-1])
+    donnees = np.frombuffer(corps, dtype=np.float32).reshape(nombre, len(noms))
+    colonne = {nom: index for index, nom in enumerate(noms)}
+
+    def prendre(*cles):
+        return torch.from_numpy(donnees[:, [colonne[c] for c in cles]].copy())
+
+    rest = sorted(
+        (nom for nom in noms if nom.startswith("f_rest_")),
+        key=lambda nom: int(nom.split("_")[-1]),
+    )
+    # f_rest est écrit canal par canal : [bande0_r, bande1_r, ..., bande0_v, ...]
+    bandes = len(rest) // 3
+    shN = prendre(*rest).reshape(nombre, 3, bandes).transpose(1, 2) if bandes else torch.zeros(
+        nombre, 0, 3
+    )
+
+    parametres = {
+        "means": prendre("x", "y", "z"),
+        "sh0": prendre("f_dc_0", "f_dc_1", "f_dc_2").reshape(nombre, 1, 3),
+        "shN": shN,
+        "opacities": prendre("opacity").reshape(-1),
+        "scales": prendre("scale_0", "scale_1", "scale_2"),
+        "quats": prendre("rot_0", "rot_1", "rot_2", "rot_3"),
+    }
+    if appareil is not None:
+        parametres = {cle: valeur.to(appareil) for cle, valeur in parametres.items()}
+    return parametres
 
 
 def duree_estimee(configuration: Configuration) -> float:
