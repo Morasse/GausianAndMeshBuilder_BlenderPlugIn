@@ -298,6 +298,60 @@ def commande_prior(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def commande_mesh(arguments: argparse.Namespace) -> int:
+    """Extrait une surface depuis un run déjà terminé — mode Fast, Open3D."""
+    from gamb_engine import build
+    from gamb_engine.mesh import tsdf
+    from gamb_engine.train import gsplat_runner
+
+    build.activer()
+    import torch
+
+    try:
+        projet = project.charger(arguments.projet)
+    except (project.ProjetIntrouvable, project.FormatIncompatible) as probleme:
+        print(f"projet illisible : {probleme}", file=sys.stderr)
+        return 1
+
+    runs = sorted(p for p in projet.runs.glob("*") if (p / "point_cloud.ply").is_file())
+    if not runs:
+        print(f"aucun run avec un PLY dans {projet.runs}", file=sys.stderr)
+        return 1
+    run = next((p for p in runs if p.name == arguments.run), None) if arguments.run else runs[-1]
+    if run is None:
+        print(f"run {arguments.run!r} introuvable", file=sys.stderr)
+        return 1
+
+    appareil = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if appareil.type != "cuda":
+        print("aucun GPU CUDA — le rendu de profondeur n'a pas de repli", file=sys.stderr)
+        return 1
+
+    parametres = gsplat_runner.lire_ply(run / "point_cloud.ply", torch, appareil)
+    configuration = gsplat_runner.Configuration()
+    dataset = gsplat_runner.charger_dataset(projet, configuration, appareil)
+
+    bandes = parametres["shN"].shape[1]
+    degre = int(round((bandes + 1) ** 0.5)) - 1
+
+    destination = projet.racine / "mesh" / f"{run.name}.ply"
+    print(f"run : {run.name}  ({parametres['means'].shape[0]} gaussiennes, SH degre {degre})")
+    resultat = tsdf.extraire(
+        parametres,
+        dataset,
+        destination,
+        degre_sh=degre,
+        taille_voxel=arguments.voxel,
+        decimation=arguments.decimation,
+        torch=torch,
+    )
+
+    print(f"mesh : {resultat.chemin}")
+    print(f"  {resultat.sommets} sommets, {resultat.triangles} triangles")
+    print(f"  {resultat.vues_integrees} vues integrees, voxel {arguments.voxel}")
+    return 0
+
+
 def construire_analyseur() -> argparse.ArgumentParser:
     analyseur = argparse.ArgumentParser(
         prog=naming.CLI_COMMAND,
@@ -374,7 +428,21 @@ def construire_analyseur() -> argparse.ArgumentParser:
     prior.add_argument("--elaguer-tous-les", type=int, default=100)
     prior.set_defaults(fonction=commande_prior)
 
+    maillage = sous.add_parser("mesh", help="extrait une surface depuis un run (mode Fast)")
+    maillage.add_argument("projet", help="racine du projet")
+    maillage.add_argument("--run", default=None, help="defaut : le plus recent")
+    maillage.add_argument("--voxel", type=float, default=tsdf_taille_voxel())
+    maillage.add_argument("--decimation", type=int, default=0, help="triangles cibles ; 0 = brut")
+    maillage.set_defaults(fonction=commande_mesh)
+
     return analyseur
+
+
+def tsdf_taille_voxel() -> float:
+    """Défaut du voxel TSDF, lu sans importer Open3D."""
+    from gamb_engine.mesh import tsdf
+
+    return tsdf.TAILLE_VOXEL_PAR_DEFAUT
 
 
 def main(argv: list[str] | None = None) -> int:

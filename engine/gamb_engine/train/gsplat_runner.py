@@ -551,6 +551,50 @@ def ecrire_ply(chemin: Path, parametres, torch) -> None:
         fichier.write(donnees.tobytes())
 
 
+def lire_ply(chemin: Path, torch, appareil=None) -> dict:
+    """Relit un PLY 3DGS et reconstruit les paramètres, valeurs pré-activation.
+
+    L'inverse exact de `ecrire_ply`. Sert à extraire un mesh d'un run déjà
+    terminé sans le réentraîner — un run est immuable, on doit pouvoir y
+    revenir.
+    """
+    import numpy as np
+
+    brut = Path(chemin).read_bytes()
+    entete, _, corps = brut.partition(b"end_header\n")
+    lignes = entete.decode("ascii").splitlines()
+
+    noms = [ligne.split()[-1] for ligne in lignes if ligne.startswith("property float")]
+    nombre = int(next(ligne for ligne in lignes if ligne.startswith("element vertex")).split()[-1])
+    donnees = np.frombuffer(corps, dtype=np.float32).reshape(nombre, len(noms))
+    colonne = {nom: index for index, nom in enumerate(noms)}
+
+    def prendre(*cles):
+        return torch.from_numpy(donnees[:, [colonne[c] for c in cles]].copy())
+
+    rest = sorted(
+        (nom for nom in noms if nom.startswith("f_rest_")),
+        key=lambda nom: int(nom.split("_")[-1]),
+    )
+    # f_rest est écrit canal par canal : [bande0_r, bande1_r, ..., bande0_v, ...]
+    bandes = len(rest) // 3
+    shN = prendre(*rest).reshape(nombre, 3, bandes).transpose(1, 2) if bandes else torch.zeros(
+        nombre, 0, 3
+    )
+
+    parametres = {
+        "means": prendre("x", "y", "z"),
+        "sh0": prendre("f_dc_0", "f_dc_1", "f_dc_2").reshape(nombre, 1, 3),
+        "shN": shN,
+        "opacities": prendre("opacity").reshape(-1),
+        "scales": prendre("scale_0", "scale_1", "scale_2"),
+        "quats": prendre("rot_0", "rot_1", "rot_2", "rot_3"),
+    }
+    if appareil is not None:
+        parametres = {cle: valeur.to(appareil) for cle, valeur in parametres.items()}
+    return parametres
+
+
 def duree_estimee(configuration: Configuration) -> float:
     """Ordre de grandeur, pour l'interface. Volontairement grossier."""
     return configuration.iterations * 0.02 * math.sqrt(max(configuration.resolution, 1))
