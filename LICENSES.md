@@ -445,6 +445,43 @@ Le carve-out processus séparé, verbatim : « You have full freedom to license 
 
 ---
 
+## B.12 — Transitives réellement verrouillées à P1 (`engine/uv.lock`)
+
+Les tableaux ci-dessus couvrent les dépendances **nommées dans la spec**. Celui-ci couvre ce que le résolveur a effectivement épinglé quand P1 a introduit FastAPI et uvicorn — c'est-à-dire les paquets que personne n'a choisis mais que l'on distribue quand même.
+
+Métadonnées lues sur PyPI **pour la version exacte verrouillée**, pas pour la dernière publiée : `pydantic-core` diverge entre les deux, et c'est précisément le genre d'écart qui rend un audit faux sans qu'on s'en aperçoive.
+
+| Composant | Version | Licence | Commercial | Conf. |
+|---|---|---|---|---|
+| annotated-doc | 0.0.5 | MIT | **oui** | confirmé |
+| annotated-types | 0.8.0 | MIT | **oui** | confirmé |
+| anyio | 4.14.2 | MIT | **oui** | confirmé |
+| click | 8.4.2 | BSD-3-Clause | **oui** | confirmé |
+| colorama | 0.4.6 | BSD (classifieur OSI) ⚠️59 | **oui** | confirmé |
+| h11 | 0.16.0 | MIT | **oui** | confirmé |
+| httpcore2 | 2.10.0 | BSD-3-Clause | **oui** (dev only) | confirmé |
+| httpx2 | 2.10.0 | BSD-3-Clause | **oui** (dev only) | confirmé |
+| httpx2-jsfetch | 1.0 | BSD-3-Clause | **oui** (dev only) | confirmé |
+| idna | 3.18 | BSD-3-Clause | **oui** | confirmé |
+| iniconfig | 2.3.0 | MIT | **oui** (dev only) | confirmé |
+| packaging | 26.3 | Apache-2.0 OR BSD-2-Clause | **oui** | confirmé |
+| pluggy | 1.6.0 | MIT | **oui** (dev only) | confirmé |
+| pydantic-core | 2.46.4 | MIT | **oui** | confirmé |
+| pygments | 2.20.0 | BSD-2-Clause | **oui** (dev only) | confirmé |
+| truststore | 0.10.4 | MIT | **oui** (dev only) | confirmé |
+| typing-extensions | 4.16.0 | PSF-2.0 | **oui** ⚠️60 | confirmé |
+| typing-inspection | 0.4.3 | MIT | **oui** | confirmé |
+
+**⚠️59 — `colorama` ne déclare pas d'expression SPDX**, seulement le classifieur `License :: OSI Approved :: BSD License`, qui ne distingue pas BSD-2 de BSD-3. Sans conséquence pratique — les deux sont permissives et compatibles — mais la ligne est marquée « confirmé » sur le classifieur, pas sur une variante précise.
+
+**⚠️60 — `typing-extensions` est sous PSF-2.0**, la licence de Python lui-même. Permissive, mais ce n'est ni MIT ni BSD : elle exige de conserver la notice de la PSF dans toute redistribution.
+
+**Aucun copyleft, aucune clause non commerciale dans ce lot.** C'est le résultat attendu pour de l'infrastructure web Python — ce qui ne dispense pas de l'avoir vérifié, puisque `tqdm` et `certifi` (⚠️58) prouvent que « tout MIT/BSD » est une supposition qui se révèle fausse une fois sur dix.
+
+**Ces 18 lignes n'existaient pas avant P1.** Elles ont été ajoutées parce qu'un contrôle a comparé `engine/uv.lock` à ce fichier et a trouvé 18 absents sur 24. C'est exactement le contrôle décrit en §E, et il doit devenir automatique — voir la règle CI correspondante.
+
+---
+
 # C. Élections de licence à acter
 
 Cinq composants offrent un **choix** de licence. Ne pas choisir, c'est laisser un relecteur choisir à votre place — et il choisira la plus stricte.
