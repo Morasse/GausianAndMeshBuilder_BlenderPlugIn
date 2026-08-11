@@ -179,6 +179,9 @@ class Dataset:
     echelle_scene: float
     indices_entrainement: list[int]
     indices_test: list[int]
+    # Poids par pixel, [N, H, W]. 1 = compte pleinement, 0 = ignoré.
+    # None quand aucun masque n'existe — le cas nominal.
+    poids: Any = None
 
 
 def charger_dataset(projet: Projet, configuration: Configuration, appareil) -> Dataset:
@@ -239,7 +242,59 @@ def charger_dataset(projet: Projet, configuration: Configuration, appareil) -> D
         echelle_scene=echelle_scene,
         indices_entrainement=indices_entrainement,
         indices_test=indices_test,
+        poids=_poids_sur_appareil(
+            charger_masques(projet, [v.nom for v in modele.vues], images.shape[1:3], torch),
+            appareil,
+        ),
     )
+
+
+def _poids_sur_appareil(poids, appareil):
+    return None if poids is None else poids.to(appareil)
+
+
+def charger_masques(projet: Projet, noms: list[str], forme, torch):
+    """Poids par pixel, lus depuis `masks/<classe>/<image>.png`.
+
+    **C'est ici qu'est le vrai travail, pas dans le modèle de segmentation.**
+    Un masque dit « n'apprends rien de ces pixels » : c'est ce qui empêche
+    l'entraînement d'inventer de la géométrie dans une vitre ou dans le ciel.
+    Le producteur des masques — SAM 3, SAM 2, un rendu de Blender, ou un
+    coup de pinceau — est interchangeable ; l'exclusion dans la loss, non.
+
+    Un pixel masqué par **n'importe quelle** classe est exclu : les classes
+    sont des raisons d'exclure, pas des poids à composer.
+    """
+    import numpy as np
+    from PIL import Image
+
+    dossier = projet.racine / "masks"
+    if not dossier.is_dir():
+        return None
+
+    classes = [d for d in sorted(dossier.iterdir()) if d.is_dir()]
+    if not classes:
+        return None
+
+    hauteur, largeur = int(forme[0]), int(forme[1])
+    poids = torch.ones(len(noms), hauteur, largeur)
+    trouves = 0
+
+    for index, nom in enumerate(noms):
+        for classe in classes:
+            chemin = classe / f"{Path(nom).stem}.png"
+            if not chemin.is_file():
+                continue
+            masque = Image.open(chemin).convert("L")
+            if masque.size != (largeur, hauteur):
+                masque = masque.resize((largeur, hauteur), Image.NEAREST)
+            # Blanc = masqué. Le seuil à mi-course évite qu'un anticrénelage
+            # de bord fasse basculer des pixels au hasard.
+            exclu = torch.from_numpy(np.asarray(masque, dtype=np.uint8) >= 128)
+            poids[index][exclu] = 0.0
+            trouves += 1
+
+    return poids if trouves else None
 
 
 # --- Initialisation ----------------------------------------------------------
@@ -379,7 +434,15 @@ def entrainer(
         rendu, info = _rendre(parametres, dataset, indice, degre, torch)
         verite = dataset.images[indice]
 
-        l1 = (rendu - verite).abs().mean()
+        if dataset.poids is None:
+            l1 = (rendu - verite).abs().mean()
+        else:
+            # Moyenne pondérée, pas moyenne d'un produit : diviser par la somme
+            # des poids et non par le nombre de pixels, sinon masquer la moitié
+            # d'une image divise sa loss par deux et la vue compte moins que
+            # les autres — exactement l'inverse de ce qu'on veut.
+            poids = dataset.poids[indice].unsqueeze(-1)
+            l1 = ((rendu - verite).abs() * poids).sum() / poids.sum().clamp_min(1.0) / 3.0
         similarite = ssim(
             rendu.permute(0, 3, 1, 2), verite.permute(0, 3, 1, 2), torch
         )
