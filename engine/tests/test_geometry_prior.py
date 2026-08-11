@@ -197,6 +197,22 @@ def test_l_elagage_respecte_sa_cadence_et_son_demarrage():
     assert contrainte.elaguer(parametres, optimiseurs, etat, 550, torch) == 0  # hors cadence
 
 
+def test_la_passe_finale_ignore_la_cadence():
+    """Sans elle, le PLY livré contient encore ce que l'utilisateur a exclu.
+
+    La densification tourne jusqu'au dernier pas : les gaussiennes créées après
+    le dernier élagage périodique survivraient jusque dans le fichier de sortie.
+    """
+    pytest.importorskip("gsplat")
+    contrainte = prior.PriorGeometrique(
+        volumes=[_cube(demi=1.0)], elaguer_tous_les=100, elaguer_a_partir_de=500
+    )
+    parametres, optimiseurs, etat = _contexte(torch.tensor([[9.0, 0.0, 0.0], [0.0, 0.0, 0.0]]))
+
+    assert contrainte.elaguer(parametres, optimiseurs, etat, 7, torch, final=True) == 1
+    assert parametres["means"].shape[0] == 1
+
+
 # --- La pénalité SDF ---------------------------------------------------------
 
 

@@ -438,6 +438,13 @@ def entrainer(
             if progression:
                 progression(etape, configuration.iterations, dernier_psnr)
 
+    # Passe finale : la densification tourne jusqu'au dernier pas, donc sans
+    # elle le PLY livré contient encore des gaussiennes hors volume.
+    if prior is not None:
+        elaguees += prior.elaguer(
+            parametres, optimiseurs, etat, configuration.iterations, torch, final=True
+        )
+
     metriques = Metriques(
         psnr_entrainement=dernier_psnr,
         nombre_gaussiennes=int(parametres["means"].shape[0]),

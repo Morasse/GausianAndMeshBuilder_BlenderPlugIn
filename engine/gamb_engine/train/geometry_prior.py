@@ -183,17 +183,23 @@ class PriorGeometrique:
 
         return a_supprimer
 
-    def elaguer(self, parametres, optimiseurs, etat, etape: int, torch) -> int:
+    def elaguer(
+        self, parametres, optimiseurs, etat, etape: int, torch, final: bool = False
+    ) -> int:
         """Retire les gaussiennes hors volume. Renvoie combien ont disparu.
 
         Appelé toutes les N itérations plutôt qu'à chaque pas : la densification
         en recrée en permanence, et les supprimer à chaque itération coûterait
         plus que ça ne rapporte.
         """
-        if not self.volumes or etape < self.elaguer_a_partir_de:
+        if not self.volumes:
             return 0
-        if etape % self.elaguer_tous_les != 0:
-            return 0
+        # `final` court-circuite la cadence : la densification tourne jusqu'au
+        # dernier pas, donc sans passe finale le livrable contient encore des
+        # gaussiennes que l'utilisateur a explicitement exclues.
+        if not final:
+            if etape < self.elaguer_a_partir_de or etape % self.elaguer_tous_les != 0:
+                return 0
 
         from gsplat.strategy.ops import remove
 
