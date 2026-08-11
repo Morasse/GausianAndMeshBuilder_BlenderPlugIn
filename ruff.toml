@@ -7,6 +7,11 @@
 # son original, sinon la contrainte d'identite octet pour octet devient
 # intenable.
 
+# Le code vendorise n'est pas le notre : le linter n'a pas a se prononcer
+# dessus, et le corriger creerait une divergence avec l'amont a chaque mise a
+# jour du submodule. Seul notre correctif versionne touche a gsplat.
+extend-exclude = ["third_party"]
+
 line-length = 100
 
 # Le plancher, pas la cible : le sidecar tourne en 3.11 ou 3.12, l'addon dans

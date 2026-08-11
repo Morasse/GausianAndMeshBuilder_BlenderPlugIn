@@ -10,18 +10,20 @@ moteur sans entree CLI est une capacite a moitie livree.
     gamb serve     demarre le serveur
     gamb health    interroge un serveur deja demarre
     gamb ingest    fait entrer des images dans un projet
+    gamb build     applique le correctif gsplat et compile ses kernels CUDA
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 import urllib.error
 import urllib.request
 from pathlib import Path
 
-from gamb_engine import bootstrap, machine, naming, project
+from gamb_engine import bootstrap, build, machine, naming, project
 from gamb_engine.ingest import images as ingest_images
 from gamb_engine.server import HOTE_DEFAUT, PORT_DEFAUT, VERSION
 
@@ -52,12 +54,72 @@ def commande_doctor(_: argparse.Namespace) -> int:
     print(f"  nvcc : {chaine.nvcc or 'absent'}")
     if sys.platform == "win32":
         print(f"  MSVC : {chaine.msvc or 'absent'}")
+        vcvars = build.trouver_vcvars()
+        print(f"  vcvars64.bat : {vcvars or 'INTROUVABLE'}")
     if chaine.complete:
         print("  -> gsplat pourra compiler ses kernels au besoin")
     else:
         print(f"  -> manquant : {', '.join(chaine.manquant)}")
         print("     gsplat echouera s'il doit compiler plutot qu'utiliser une wheel")
 
+    print()
+    print("=== gsplat ===")
+    if not build.submodule_present():
+        print(f"  submodule absent : {build.SUBMODULE_GSPLAT}")
+        print("  -> git submodule update --init --recursive")
+    else:
+        print(f"  submodule present, v{build.GSPLAT_VERSION} attendu")
+        if build.glm_present():
+            print("  glm (submodule imbrique) : present")
+        else:
+            print("  glm (submodule imbrique) : ABSENT — la compilation echouera")
+            print("  -> git submodule update --init --recursive")
+        etat = "applique" if build.patch_applique() else "PAS applique"
+        print(f"  correctif MSVC : {etat}")
+        if not build.patch_applique():
+            print("  -> gamb build")
+
+    return 0
+
+
+def commande_build(arguments: argparse.Namespace) -> int:
+    """Applique le correctif et declenche la compilation CUDA de gsplat."""
+    try:
+        pose = build.appliquer_patch()
+    except build.PreparationImpossible as probleme:
+        print(f"preparation impossible : {probleme}", file=sys.stderr)
+        return 1
+
+    print(f"correctif MSVC : {'applique maintenant' if pose else 'deja en place'}")
+
+    outils = build.outillage()
+    if not outils.complet:
+        print(f"outillage incomplet : {', '.join(outils.manquant)}", file=sys.stderr)
+        return 1
+
+    if arguments.correctif_seulement:
+        return 0
+
+    try:
+        environnement = build.environnement_execution()
+    except build.PreparationImpossible as probleme:
+        print(f"environnement de compilation indisponible : {probleme}", file=sys.stderr)
+        return 1
+
+    print("compilation des kernels CUDA (plusieurs dizaines de secondes au premier run)...")
+    resultat = subprocess.run(
+        [sys.executable, "-c", "from gsplat.cuda._backend import _C; print(_C.__name__)"],
+        env=environnement,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if resultat.returncode != 0:
+        print(resultat.stdout[-3000:], file=sys.stderr)
+        print(resultat.stderr[-3000:], file=sys.stderr)
+        return 1
+
+    print("kernels CUDA disponibles.")
     return 0
 
 
@@ -126,6 +188,77 @@ def commande_ingest(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def commande_options(_: argparse.Namespace) -> int:
+    """Les fiches, en clair. C'est la meme source que celle servie a l'addon."""
+    from gamb_engine import options
+
+    print("=== Presets ===")
+    for preset in options.presets().values():
+        print(f"\n  {preset.nom}")
+        print(f"    {preset.description}")
+        for cle, valeur in sorted(preset.parametres.items()):
+            print(f"      {cle} = {valeur}")
+
+    print("\n=== Fiches d'options ===")
+    for fiche in options.fiches().values():
+        print(f"\n  {fiche.cle} — {fiche.libelle}  (defaut : {fiche.defaut})")
+        print(f"    {fiche.effet.strip()}")
+        print(f"    monter quand  : {fiche.monter_quand}")
+        print(f"    baisser quand : {fiche.baisser_quand}")
+        print(f"    cout          : {fiche.cout}")
+    return 0
+
+
+def commande_train(arguments: argparse.Namespace) -> int:
+    from gamb_engine import build, options
+    from gamb_engine.train import gsplat_runner
+
+    # gsplat re-entre dans son chemin JIT a chaque import : sans cet
+    # environnement, l'import echoue sur ninja meme quand tout est compile.
+    build.activer()
+
+    try:
+        projet = project.charger(arguments.projet)
+    except (project.ProjetIntrouvable, project.FormatIncompatible) as probleme:
+        print(f"projet illisible : {probleme}", file=sys.stderr)
+        return 1
+
+    try:
+        configuration = gsplat_runner.Configuration.depuis_preset(
+            arguments.preset,
+            iterations=arguments.iterations,
+            cap_max=arguments.cap_max,
+            degre_sh=arguments.degre_sh,
+            resolution=arguments.resolution,
+            poids_ssim=arguments.poids_ssim,
+        )
+    except (options.PresetIntrouvable, options.OptionInconnue) as probleme:
+        print(f"configuration refusee : {probleme}", file=sys.stderr)
+        return 1
+
+    print(f"projet : {projet.nom}  preset : {arguments.preset}")
+    print(f"{configuration.iterations} iterations, cap_max {configuration.cap_max}")
+
+    def avancement(etape: int, total: int, valeur_psnr: float) -> None:
+        if etape % 1000 == 0:
+            print(f"  {etape:>6}/{total}  psnr {valeur_psnr:.2f}", flush=True)
+
+    try:
+        resultat = gsplat_runner.entrainer(projet, configuration, avancement)
+    except (RuntimeError, ValueError, FileNotFoundError) as probleme:
+        print(f"entrainement interrompu : {probleme}", file=sys.stderr)
+        return 1
+
+    metriques = resultat.metriques
+    print(f"\nrun : {resultat.dossier}")
+    print(f"  gaussiennes    : {metriques.nombre_gaussiennes}")
+    print(f"  PSNR entrainement : {metriques.psnr_entrainement:.2f} dB")
+    print(f"  PSNR test         : {metriques.psnr_test:.2f} dB  (vues jamais vues)")
+    print(f"  SSIM test         : {metriques.ssim_test:.4f}")
+    print(f"  duree             : {metriques.duree_s:.0f} s")
+    return 0
+
+
 def construire_analyseur() -> argparse.ArgumentParser:
     analyseur = argparse.ArgumentParser(
         prog=naming.CLI_COMMAND,
@@ -172,6 +305,27 @@ def construire_analyseur() -> argparse.ArgumentParser:
         help="unites — decision figee (defaut : metre)",
     )
     ingest.set_defaults(fonction=commande_ingest)
+
+    construction = sous.add_parser(
+        "build", help="applique le correctif gsplat et compile ses kernels CUDA"
+    )
+    construction.add_argument(
+        "--correctif-seulement",
+        action="store_true",
+        help="pose le correctif sans lancer la compilation",
+    )
+    construction.set_defaults(fonction=commande_build)
+
+    fiches = sous.add_parser("options", help="affiche les fiches d'options et les presets")
+    fiches.set_defaults(fonction=commande_options)
+
+    entrainement = sous.add_parser("train", help="entraine un splat sur un projet")
+    entrainement.add_argument("projet", help="racine du projet")
+    entrainement.add_argument("--preset", default="production", help="defaut : production")
+    for cle in ("iterations", "cap-max", "degre-sh", "resolution"):
+        entrainement.add_argument(f"--{cle}", type=int, default=None)
+    entrainement.add_argument("--poids-ssim", type=float, default=None)
+    entrainement.set_defaults(fonction=commande_train)
 
     return analyseur
 

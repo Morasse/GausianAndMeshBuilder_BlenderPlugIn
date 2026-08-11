@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: Apache-2.0
+nom: production
+description: >
+  Le preset de référence, aligné sur les valeurs par défaut du simple_trainer
+  de gsplat. C'est celui auquel on compare tout le reste.
+parametres:
+  iterations: 30000
+  cap_max: 1000000
+  degre_sh: 3
+  resolution: 1
+  poids_ssim: 0.2

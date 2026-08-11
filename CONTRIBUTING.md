@@ -107,6 +107,44 @@ sinon un build cassé passe inaperçu en local et n'apparaît qu'en CI :
 uv venv --python 3.11 /tmp/verif && uv pip install --python /tmp/verif -e ./engine
 ```
 
+### La pile d'entraînement (gsplat + CUDA)
+
+Optionnelle : le sidecar démarre, répond et ingère sans elle. Elle n'est requise
+que pour entraîner.
+
+Les versions sont **épinglées**, et ce n'est pas de la prudence : gsplat déclare
+`torch` sans aucune borne, donc un `pip install gsplat` prend la dernière version
+publiée et casse. C'est exactement ce qui est arrivé — torch 2.11 est
+incompilable sous Windows, son en-tête déclarant un paramètre nommé `small` que
+le SDK Windows redéfinit en `char`.
+
+```bash
+git submodule update --init --recursive          # ⚠️ AVANT tout le reste
+uv pip install --index-url https://download.pytorch.org/whl/cu128 torch==2.8.0
+BUILD_NO_CUDA=1 uv pip install --no-build-isolation -e ./third_party/gsplat
+gamb build
+```
+
+**L'ordre compte.** gsplat a lui-même un submodule imbriqué, `glm`, dont
+dépendent tous ses kernels. Et une fois le correctif MSVC posé, le submodule est
+modifié, donc git refuse de le mettre à jour — il faut donc initialiser
+récursivement *avant*. Sans `glm`, la compilation démarre quand même et échoue au
+dixième fichier dans des milliers de lignes de log nvcc. `gamb doctor` et
+`gamb build` le vérifient désormais et le disent en une phrase.
+
+**`BUILD_NO_CUDA=1` n'est pas un contournement** : c'est ainsi qu'upstream
+produit sa propre wheel PyPI, qui est `py3-none-any`. Sans lui, l'installation
+compile les kernels immédiatement, dans un shell qui n'a pas `cl.exe`, et
+échoue. Avec lui, l'installation est pure Python et `gamb build` prend la suite :
+il pose le correctif MSVC, prépare l'environnement Visual Studio, puis déclenche
+la compilation (~80 s, une seule fois).
+
+Prérequis vérifiables sans rien installer :
+
+```bash
+gamb doctor        # nvcc, MSVC, vcvars64.bat, état du submodule et du correctif
+```
+
 ### Le dataset de test
 
 Les vraies captures sont lentes à produire et leurs poses sont *estimées*. Sur
@@ -130,6 +168,67 @@ manifeste que par un entraînement qui ne converge jamais.
 
 Ce dataset porte ses poses au format COLMAP, donc **l'entraîneur se valide sans
 COLMAP**.
+
+### Entraîner
+
+```bash
+gamb options                                   # les fiches et les presets, en clair
+gamb train ./dataset_test --preset apercu      # ~1 min, pour vérifier que tout tient
+gamb train ./dataset_test --preset production  # la référence
+```
+
+Chaque run écrit un dossier **immuable** sous `runs/`, contenant sa
+configuration **complète** — pas un diff — ses métriques et son PLY. C'est ce
+qui rend deux runs comparables : sans la config entière, une comparaison A/B
+ment dès qu'un défaut a changé entre-temps.
+
+Le PSNR affiché en fin de run est celui des **vues de test**, une sur huit, que
+l'optimisation n'a jamais vues. Le PSNR d'entraînement mesure la capacité à
+mémoriser ; seul celui de test mesure la reconstruction.
+
+### Le critère d'acceptation de l'entraînement, et sa limite
+
+Le critère visé était : *PSNR à ±0.3 dB du `simple_trainer.py` de gsplat sur le
+même dataset*. **Cette comparaison directe n'a pas pu être exécutée**, et la
+raison mérite d'être écrite parce qu'elle ressurgira :
+
+`examples/simple_trainer.py` importe **`fused_ssim` au niveau module**. Ce
+paquet ne figure pas dans son propre `examples/requirements.txt`, n'est pas
+publié sur PyPI, n'existe que sur GitHub, et exige une compilation CUDA qui
+échoue ici à la génération des métadonnées. S'y ajoute un `numpy<2.0.0` épinglé
+par les exemples, incompatible avec le numpy de notre pile. C'est un problème de
+reproductibilité de la référence, pas du code de GAMB.
+
+Ce qui est vérifié à la place, et qui couvre le risque réel — un bug de
+*wrapper* : les hyperparamètres sont repris du preset `mcmc` de `simple_trainer`
+valeur pour valeur, et un test les fige ; la rasterisation et la stratégie MCMC
+sont celles de gsplat, appelées directement ; et le PSNR rapporté est celui de
+vues **jamais vues** par l'optimisation. Une erreur de convention de repère,
+d'intrinsèques ou d'espace colorimétrique ferait s'effondrer ce dernier chiffre,
+pas dériver de 0,3 dB.
+
+Mesuré sur le dataset synthétique, preset `production` à 7000 itérations :
+**31,4 dB de PSNR de test, SSIM 0,973, 191 905 gaussiennes, 43 s.**
+
+### Ajouter un réglage : la règle §14
+
+**Aucun libellé ni tooltip n'est écrit en dur dans le code de l'addon.** Un
+nouveau paramètre naît avec sa fiche dans
+`engine/gamb_engine/options/fiches/`, qui répond aux quatre questions qu'un
+artiste se pose devant un curseur :
+
+```yaml
+mon_reglage:
+  libelle: "Nom affiché"
+  effet: "Ce que ça change, en une phrase"
+  monter_quand: "..."
+  baisser_quand: "..."
+  cout: "VRAM, temps, ou négligeable"
+  defaut: 42
+```
+
+Un test refuse tout paramètre de preset sans fiche. C'est volontairement
+mécanique : la pédagogie ajoutée après coup ne l'est jamais.
 
 ### La vérification que le CI ne peut pas faire
 

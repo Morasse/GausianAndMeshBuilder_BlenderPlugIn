@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: Apache-2.0
+nom: apercu
+description: >
+  Pour voir vite si une capture tient debout. Résolution réduite, peu
+  d'itérations, SH bas. Ne juge pas la qualité finale sur ce preset.
+parametres:
+  iterations: 3000
+  cap_max: 300000
+  degre_sh: 1
+  resolution: 2
+  poids_ssim: 0.2

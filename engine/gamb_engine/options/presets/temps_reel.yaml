@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: Apache-2.0
+nom: temps_reel
+description: >
+  Cible moteur de jeu. Plafonne le nombre de gaussiennes et le degré des SH,
+  les deux postes qui décident du budget à l'exécution. L'ordre de grandeur
+  visé est quelques centaines de milliers de gaussiennes pour du 60 fps
+  desktop — à mesurer dans le moteur, pas à supposer.
+parametres:
+  iterations: 15000
+  cap_max: 250000
+  degre_sh: 1
+  resolution: 1
+  poids_ssim: 0.2

@@ -1,0 +1,9 @@
+[submodule "third_party/gsplat"]
+	path = third_party/gsplat
+	url = https://github.com/nerfstudio-project/gsplat
+	# `gamb build` applique third_party/patches/0001-gsplat-msvc-flags.patch dans
+	# la copie de travail, donc le submodule est modifié en permanence. Sans
+	# `ignore = dirty`, `git status` le signale à chaque appel — et on finit par
+	# ne plus lire git status du tout, ce qui est bien pire. Le commit épinglé,
+	# lui, reste suivi normalement : seul le contenu modifié est ignoré.
+	ignore = dirty

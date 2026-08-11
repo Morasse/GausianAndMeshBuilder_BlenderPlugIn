@@ -1,0 +1,31 @@
+diff --git a/gsplat/cuda/_backend.py b/gsplat/cuda/_backend.py
+index 3b6faeef..000ea7a9 100644
+--- a/gsplat/cuda/_backend.py
++++ b/gsplat/cuda/_backend.py
+@@ -73,7 +73,10 @@ def load_extension(
+                 extra_cflags, extra_include_paths
+             )
+             head_file = os.path.join(_TORCH_PATH, "include", "torch", "extension.h")
+-            extra_cflags += ["-include", head_file, "-Winvalid-pch"]
++            if os.name != "nt":
++                # -include and -Winvalid-pch are GCC/Clang spellings; MSVC uses
++                # /FI and has no equivalent warning flag.
++                extra_cflags += ["-include", head_file, "-Winvalid-pch"]
+ 
+         try:
+             compiled = _jit_compile(
+@@ -174,7 +177,13 @@ except ImportError:
+ 
+         extra_include_paths = [os.path.join(PATH, "include/"), glm_path]
+         opt_level = "-O0" if FAST_COMPILE else "-O3"
+-        extra_cflags = [opt_level, "-Wno-attributes"]
++        if os.name == "nt":
++            # MSVC rejects both of these: -O3 is not a valid optimisation
++            # switch (cl uses /O2) and -Wno-attributes is a GCC warning flag,
++            # which cl reports as "D8021: invalid numeric argument".
++            extra_cflags = ["/Od" if FAST_COMPILE else "/O2"]
++        else:
++            extra_cflags = [opt_level, "-Wno-attributes"]
+         extra_cuda_cflags = [opt_level]
+         if not NO_FAST_MATH:
+             extra_cuda_cflags += ["-use_fast_math"]
