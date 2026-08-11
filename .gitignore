@@ -20,6 +20,20 @@
 **/mesh/
 **/light/
 
+# --- Le code source n'est jamais une donnee de projet ------------------------
+#
+# Les motifs ci-dessus sont recursifs, donc ils attrapent aussi des paquets du
+# moteur qui portent le meme nom : `engine/gamb_engine/poses/` a ete ignore en
+# silence, et `mesh/` puis `light/` l'auraient ete a leur tour.
+#
+# Un fichier source ignore ne provoque aucune erreur : il n'est simplement
+# jamais pousse, et le prochain clone est cassé sans que personne ne comprenne
+# pourquoi. Le test test_arborescence.py verifie que tout le code est suivi.
+
+!engine/gamb_engine/poses/
+!engine/gamb_engine/mesh/
+!engine/gamb_engine/light/
+
 # --- Artefacts lourds, ou qu'ils soient --------------------------------------
 
 *.ply
