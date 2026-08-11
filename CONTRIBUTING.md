@@ -99,6 +99,14 @@ ruff check .
 pytest engine/tests -q
 ```
 
+⚠️ **Un venv tiède ne reconstruit pas le paquet.** Si tu touches à
+`engine/pyproject.toml`, refais la vérification dans un environnement **neuf** —
+sinon un build cassé passe inaperçu en local et n'apparaît qu'en CI :
+
+```bash
+uv venv --python 3.11 /tmp/verif && uv pip install --python /tmp/verif -e ./engine
+```
+
 ### Le dataset de test
 
 Les vraies captures sont lentes à produire et leurs poses sont *estimées*. Sur

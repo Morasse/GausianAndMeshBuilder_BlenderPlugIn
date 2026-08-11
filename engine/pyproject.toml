@@ -1,12 +1,17 @@
 [build-system]
-requires = ["hatchling"]
+# Borne haute volontaire. Une dependance de build non bornee casse le jour ou
+# elle sort une version plus stricte, et ca ne se voit **pas** en local : un
+# venv tiede ne reconstruit rien. C'est arrive ici avec le champ `readme`.
+requires = ["hatchling>=1.27,<2"]
 build-backend = "hatchling.build"
 
 [project]
 name = "gamb-engine"
 version = "0.1.0"
 description = "Sidecar de GAMB — pipeline 3D Gaussian Splatting pilotable sans Blender"
-readme = "../README.md"
+# Pas de champ `readme` : hatchling refuse un chemin hors du dossier du paquet,
+# et le README du projet vit a la racine du depot. Le moteur n'est pas publie
+# sur PyPI, donc il n'a pas besoin de description longue.
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 requires-python = ">=3.11,<3.13"
