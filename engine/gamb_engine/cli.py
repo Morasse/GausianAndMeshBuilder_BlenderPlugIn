@@ -259,6 +259,45 @@ def commande_train(arguments: argparse.Namespace) -> int:
     return 0
 
 
+def commande_prior(arguments: argparse.Namespace) -> int:
+    """Écrit un prior géométrique dans le projet.
+
+    À P4 une seule source automatique : la boîte englobante du nuage
+    d'initialisation. C'est le garde-fou minimal — il suffit déjà à interdire
+    les floaters lointains, sans rien modéliser. Les volumes dessinés à la main
+    dans Blender arriveront par l'addon, dans le même `prior.json`.
+    """
+    from gamb_engine.poses import colmap
+    from gamb_engine.train import geometry_prior
+
+    try:
+        projet = project.charger(arguments.projet)
+        modele = colmap.lire(projet.racine)
+    except (project.ProjetIntrouvable, colmap.ModeleIllisible) as probleme:
+        print(f"projet illisible : {probleme}", file=sys.stderr)
+        return 1
+
+    if not modele.points:
+        print("aucun nuage d'initialisation — rien pour deduire un volume", file=sys.stderr)
+        return 1
+
+    volume = geometry_prior.volume_englobant(modele.points, marge=arguments.marge)
+    prior = geometry_prior.PriorGeometrique(
+        volumes=[volume],
+        elaguer_tous_les=arguments.elaguer_tous_les,
+    )
+    chemin = prior.ecrire(projet.racine)
+
+    demi = [volume.matrice[i][i] for i in range(3)]
+    centre = [volume.matrice[i][3] for i in range(3)]
+    print(f"prior ecrit : {chemin}")
+    print(f"  volume englobant, marge {arguments.marge}")
+    print(f"  centre      : {', '.join(f'{v:.2f}' for v in centre)}")
+    print(f"  demi-dimensions : {', '.join(f'{v:.2f}' for v in demi)}")
+    print(f"  elagage tous les {arguments.elaguer_tous_les} pas")
+    return 0
+
+
 def construire_analyseur() -> argparse.ArgumentParser:
     analyseur = argparse.ArgumentParser(
         prog=naming.CLI_COMMAND,
@@ -326,6 +365,14 @@ def construire_analyseur() -> argparse.ArgumentParser:
         entrainement.add_argument(f"--{cle}", type=int, default=None)
     entrainement.add_argument("--poids-ssim", type=float, default=None)
     entrainement.set_defaults(fonction=commande_train)
+
+    prior = sous.add_parser("prior", help="ecrit un prior geometrique dans le projet")
+    prior.add_argument("projet", help="racine du projet")
+    prior.add_argument(
+        "--marge", type=float, default=0.05, help="marge relative autour du nuage"
+    )
+    prior.add_argument("--elaguer-tous-les", type=int, default=100)
+    prior.set_defaults(fonction=commande_prior)
 
     return analyseur
 
