@@ -8,7 +8,10 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # main, plus les branches de phase (p1-sidecar, p2-ingest, ...). Attendre
+    # l'ouverture de la PR pour avoir un retour du CI fait perdre un aller-retour
+    # a chaque fois quand on developpe seul.
+    branches: [main, "p*-*"]
   pull_request:
     branches: [main]
 
