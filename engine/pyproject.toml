@@ -22,7 +22,15 @@ requires-python = ">=3.11,<3.13"
 dependencies = [
   "fastapi>=0.115",
   "uvicorn>=0.32",
+  # Fiches d'options et presets (§14). Sans dependance transitive, et deja
+  # auditee dans LICENSES.md.
+  "pyyaml>=6",
 ]
+
+# La pile d'entrainement n'est pas declaree ici : torch s'installe depuis
+# l'index PyTorch (cu128) et gsplat depuis le submodule, deux sources qu'un
+# lockfile PyPI ne sait pas decrire honnetement. La procedure exacte est dans
+# CONTRIBUTING.md, et `gamb doctor` dit ce qui manque.
 
 # Borne haute a 3.13 exclue, et ce n'est pas de la prudence : les wheels CUDA
 # pour cp313 sur Windows sont inegales, et c'est precisement la raison d'etre de

@@ -169,6 +169,43 @@ manifeste que par un entraînement qui ne converge jamais.
 Ce dataset porte ses poses au format COLMAP, donc **l'entraîneur se valide sans
 COLMAP**.
 
+### Entraîner
+
+```bash
+gamb options                                   # les fiches et les presets, en clair
+gamb train ./dataset_test --preset apercu      # ~1 min, pour vérifier que tout tient
+gamb train ./dataset_test --preset production  # la référence
+```
+
+Chaque run écrit un dossier **immuable** sous `runs/`, contenant sa
+configuration **complète** — pas un diff — ses métriques et son PLY. C'est ce
+qui rend deux runs comparables : sans la config entière, une comparaison A/B
+ment dès qu'un défaut a changé entre-temps.
+
+Le PSNR affiché en fin de run est celui des **vues de test**, une sur huit, que
+l'optimisation n'a jamais vues. Le PSNR d'entraînement mesure la capacité à
+mémoriser ; seul celui de test mesure la reconstruction.
+
+### Ajouter un réglage : la règle §14
+
+**Aucun libellé ni tooltip n'est écrit en dur dans le code de l'addon.** Un
+nouveau paramètre naît avec sa fiche dans
+`engine/gamb_engine/options/fiches/`, qui répond aux quatre questions qu'un
+artiste se pose devant un curseur :
+
+```yaml
+mon_reglage:
+  libelle: "Nom affiché"
+  effet: "Ce que ça change, en une phrase"
+  monter_quand: "..."
+  baisser_quand: "..."
+  cout: "VRAM, temps, ou négligeable"
+  defaut: 42
+```
+
+Un test refuse tout paramètre de preset sans fiche. C'est volontairement
+mécanique : la pédagogie ajoutée après coup ne l'est jamais.
+
 ### La vérification que le CI ne peut pas faire
 
 Les tests ci-dessus couvrent chaque morceau isolément. Ils ne peuvent pas

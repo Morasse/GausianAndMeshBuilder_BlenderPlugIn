@@ -1,0 +1,57 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Fiches d'options — §14.
+#
+# Aucun libellé ni tooltip n'est écrit en dur dans le code de l'addon : tout
+# vient d'ici. La règle a été posée dès le premier paramètre exposé, parce que
+# le coût est marginal avec quatre fiches et prohibitif avec trente.
+#
+# Chaque fiche répond aux quatre questions qu'un artiste se pose devant un
+# curseur, et auxquelles un tooltip d'une ligne ne répond jamais : à quoi ça
+# sert, quand le monter, quand le baisser, ce que ça coûte.
+
+cap_max:
+  libelle: "Plafond de gaussiennes"
+  effet: >
+    Nombre maximal de primitives que la stratégie MCMC s'autorise. C'est le
+    levier principal sur la qualité comme sur la mémoire.
+  monter_quand: "Scène large, ou détails fins qui restent flous après convergence"
+  baisser_quand: "Saturation de VRAM, ou cible temps réel dans un moteur de jeu"
+  cout: "Linéaire en VRAM — le levier n°1"
+  defaut: 1000000
+
+iterations:
+  libelle: "Itérations"
+  effet: "Durée de l'optimisation. La qualité progresse vite puis plafonne."
+  monter_quand: "Flou résiduel, ou floaters encore présents en fin de run"
+  baisser_quand: "Les métriques ne bougent plus — c'est du temps perdu"
+  cout: "Linéaire en temps"
+  defaut: 30000
+
+degre_sh:
+  libelle: "Degré des harmoniques sphériques"
+  effet: >
+    Richesse de la variation de couleur selon l'angle de vue. 0 donne une
+    couleur fixe par gaussienne ; 3 capte les reflets et le métal.
+  monter_quand: "Surfaces brillantes, métal, vernis"
+  baisser_quand: "Scène mate, ou cible mobile et temps réel"
+  cout: "0 → 3 multiplie par ~16 le poids de la couleur"
+  defaut: 3
+
+resolution:
+  libelle: "Facteur de résolution"
+  effet: "Divise la taille des images d'entraînement. 1 = pleine résolution."
+  monter_quand: "Itération rapide, exploration de réglages, ou saturation VRAM"
+  baisser_quand: "Le détail fin manque dans le résultat final"
+  cout: "Quadratique — diviser par 2 divise le coût par 4"
+  defaut: 1
+
+poids_ssim:
+  libelle: "Poids du SSIM dans la loss"
+  effet: >
+    Arbitre entre fidélité pixel à pixel (L1) et similarité structurelle.
+    Le SSIM pousse vers des contours nets plutôt qu'une moyenne floue.
+  monter_quand: "Résultat correct en moyenne mais mou, sans contours francs"
+  baisser_quand: "Artefacts de texture, ou entraînement instable"
+  cout: "Négligeable"
+  defaut: 0.2

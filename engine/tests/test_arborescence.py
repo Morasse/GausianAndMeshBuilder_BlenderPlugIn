@@ -66,21 +66,25 @@ def test_aucun_fichier_source_n_est_ignore():
     )
 
 
-def test_les_paquets_du_moteur_sont_suivis():
-    """Un paquet non suivi casse l'import à l'exécution, pas au commit."""
-    if not _depot_disponible():
-        pytest.skip("hors dépôt git")
+def test_chaque_dossier_du_moteur_est_un_vrai_paquet():
+    """Un dossier sans `__init__.py` devient un paquet-espace-de-noms implicite.
 
-    suivis = set(_git("ls-files").stdout.splitlines())
-    manquants = []
+    Ça marche en développement — l'arborescence est sur le disque — et casse une
+    fois installé en wheel, parce que le backend de build ne l'inclut pas. La
+    panne arrive donc au plus mauvais moment : chez l'utilisateur.
+    """
+    moteur = RACINE_DEPOT / "engine" / "gamb_engine"
+    sans_init = []
 
-    for chemin in (RACINE_DEPOT / "engine" / "gamb_engine").rglob("__init__.py"):
-        if "__pycache__" in chemin.parts:
+    for dossier in moteur.rglob("*"):
+        if not dossier.is_dir() or "__pycache__" in dossier.parts:
             continue
-        relatif = str(chemin.relative_to(RACINE_DEPOT)).replace("\\", "/")
-        if relatif not in suivis:
-            manquants.append(relatif)
+        # Un dossier de données (fiches, presets) n'a pas à être un paquet.
+        if not any(chemin.suffix == ".py" for chemin in dossier.iterdir()):
+            continue
+        if not (dossier / "__init__.py").is_file():
+            sans_init.append(str(dossier.relative_to(RACINE_DEPOT)))
 
-    assert not manquants, (
-        "paquets du moteur absents de l'index git :\n  " + "\n  ".join(manquants)
+    assert not sans_init, (
+        "dossiers Python sans __init__.py :\n  " + "\n  ".join(sans_init)
     )

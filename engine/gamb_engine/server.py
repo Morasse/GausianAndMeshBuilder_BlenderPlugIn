@@ -58,6 +58,28 @@ def creer_application() -> FastAPI:
     def health() -> dict[str, Any]:
         return etat()
 
+    @application.get("/options")
+    def options_disponibles() -> dict[str, Any]:
+        """Fiches et presets, servis a l'addon.
+
+        C'est cette route qui rend tenable la regle « aucun libelle en dur dans
+        le code de l'addon » : le panneau Blender affiche ce que le moteur lui
+        dit, et une fiche corrigee ici apparait sans toucher a l'extension.
+        """
+        from gamb_engine import options
+
+        return {
+            "fiches": [fiche.en_dictionnaire() for fiche in options.fiches().values()],
+            "presets": [
+                {
+                    "nom": preset.nom,
+                    "description": preset.description,
+                    "parametres": preset.parametres,
+                }
+                for preset in options.presets().values()
+            ],
+        }
+
     return application
 
 
