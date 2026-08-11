@@ -99,6 +99,29 @@ ruff check .
 pytest engine/tests -q
 ```
 
+### La vérification que le CI ne peut pas faire
+
+Les tests ci-dessus couvrent chaque morceau isolément. Ils ne peuvent pas
+vérifier que Blender, l'addon et le moteur se parlent — il n'existe pas de CI
+avec un GPU NVIDIA et une installation de Blender.
+
+Cette chaîne-là se vérifie à la main, en deux commandes. Le moteur d'abord :
+
+```bash
+gamb serve
+```
+
+Puis, dans un autre terminal :
+
+```bash
+blender --background --factory-startup --python scripts/verifier_dans_blender.py
+```
+
+Attendu : `RESULTAT: TOUT VERT`, précédé de la ligne exacte que le panneau
+affiche — par exemple `online, VRAM 12.6 / 16.0 Go libres`.
+
+C'est le critère d'acceptation de P1, rejouable à volonté.
+
 ---
 
 ## La règle qui casse le CI si on l'oublie
